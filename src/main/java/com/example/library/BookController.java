@@ -2,6 +2,7 @@ package com.example.library;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import redis.clients.jedis.Jedis;
 
 import java.util.List;
 
@@ -77,5 +78,34 @@ public class BookController {
     @GetMapping("/records/{bookId}")
     public Result<List<BorrowRecord>> getRecords(@PathVariable Integer bookId) {
         return Result.success(borrowRecordService.getRecordsByBookId(bookId));
+    }
+
+    @GetMapping("/cache-test/{id}")
+    public Result<String> cacheTest(@PathVariable Integer id) {
+        // 1. 连接 Redis
+        Jedis jedis = new Jedis("localhost", 6379);
+
+        String key = "book:" + id;
+
+        // 2. 先查缓存
+        String cached = jedis.get(key);
+        if (cached != null) {
+            jedis.close();
+            return Result.success("从缓存读取: " + cached);
+        }
+
+        // 3. 缓存没有，查数据库
+        Book book = bookService.getById(id);
+        if (book == null) {
+            jedis.close();
+            return Result.error("图书不存在");
+        }
+
+        // 4. 存入缓存，设置60秒过期
+        jedis.set(key, book.toString());
+        jedis.expire(key, 60);
+        jedis.close();
+
+        return Result.success("从数据库读取并缓存: " + book.toString());
     }
 }
