@@ -108,4 +108,13 @@ public class BookController {
 
         return Result.success("从数据库读取并缓存: " + book.toString());
     }
+
+    @PostMapping("/borrow-lock")
+    public Result<String> borrowWithLock(@RequestParam Integer bookId, @RequestParam String borrowerName) {
+        boolean success = borrowRecordService.borrowBookWithLock(bookId, borrowerName);
+        if (success) {
+            return Result.success("借书成功（带锁）");
+        }
+        return Result.error("借书失败");
+    }
 }

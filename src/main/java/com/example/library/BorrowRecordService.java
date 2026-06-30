@@ -4,13 +4,18 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
+import org.redisson.api.RLock;
+import org.redisson.api.RedissonClient;
+import java.util.concurrent.TimeUnit;
 import java.time.LocalDateTime;
 import java.util.List;
+
 
 @Service
 public class BorrowRecordService {
 
+    @Autowired
+    private RedissonClient redissonClient;
     @Autowired
     private BorrowRecordMapper borrowRecordMapper;
 
@@ -77,5 +82,38 @@ public class BorrowRecordService {
         QueryWrapper<BorrowRecord> wrapper = new QueryWrapper<>();
         wrapper.eq("book_id", bookId);
         return borrowRecordMapper.selectList(wrapper);
+    }
+
+    public boolean borrowBookWithLock(Integer bookId, String borrowerName) {
+        String lockKey = "lock:book:" + bookId;
+        RLock lock = redissonClient.getLock(lockKey);
+
+        try {
+            // 尝试加锁，等待3秒，锁有效期10秒
+            if (lock.tryLock(3, 10, TimeUnit.SECONDS)) {
+                // 加锁成功，执行借书逻辑
+                Book book = bookService.getById(bookId);
+                if (book == null || book.getStatus() != 0) {
+                    return false;
+                }
+                book.setStatus(1);
+                bookService.updateBook(book);
+
+                BorrowRecord record = new BorrowRecord();
+                record.setBookId(bookId);
+                record.setBorrowerName(borrowerName);
+                record.setBorrowTime(LocalDateTime.now());
+                borrowRecordMapper.insert(record);
+                return true;
+            }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            // 释放锁
+            if (lock.isHeldByCurrentThread()) {
+                lock.unlock();
+            }
+        }
+        return false;
     }
 }
