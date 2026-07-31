@@ -1,4 +1,4 @@
-package com.example.library;
+package com.example.library.config;
 
 import org.redisson.Redisson;
 import org.redisson.api.RedissonClient;
