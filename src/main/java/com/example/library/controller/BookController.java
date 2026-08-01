@@ -1,15 +1,21 @@
-package com.example.library;
-
+package com.example.library.controller;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import redis.clients.jedis.Jedis;
+import com.example.library.*;
+import com.example.library.entity.Book;
+import com.example.library.entity.BorrowRecord;
+import com.example.library.service.BookService;
+import com.example.library.service.BorrowRecordService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
-import redis.clients.jedis.Jedis;
-
 import java.util.List;
+
 
 @RestController
 @RequestMapping("/book")
 public class BookController {
 
+    private ObjectMapper objectMapper = new ObjectMapper();
     @Autowired
     private BookService bookService;
     @Autowired
@@ -23,11 +29,44 @@ public class BookController {
 
     @GetMapping("/{id}")
     public Result<Book> getBook(@PathVariable Integer id) {
-        Book book = bookService.getById(id);
-        if (book == null) {
-            return Result.error("图书不存在");
+        Jedis jedis = null;
+        try {
+            jedis = new Jedis("localhost", 6379);
+            String key = "book:" + id;
+
+            // 1. 先查缓存
+            String cached = jedis.get(key);
+            if (cached != null) {
+                Book book = objectMapper.readValue(cached, Book.class);
+                jedis.close();
+                return Result.success(book);
+            }
+
+            // 2. 缓存没有，查数据库
+            Book book = bookService.getById(id);
+            if (book == null) {
+                jedis.close();
+                return Result.error("图书不存在");
+            }
+
+            // 3. 存入缓存（JSON 格式），60秒过期
+            jedis.set(key, objectMapper.writeValueAsString(book));
+            jedis.expire(key, 60);
+            jedis.close();
+
+            return Result.success(book);
+
+        } catch (Exception e) {
+            if (jedis != null) {
+                jedis.close();
+            }
+            // Redis 出问题时降级到直接查数据库
+            Book book = bookService.getById(id);
+            if (book == null) {
+                return Result.error("图书不存在");
+            }
+            return Result.success(book);
         }
-        return Result.success(book);
     }
 
     @PostMapping("/add")
@@ -43,6 +82,12 @@ public class BookController {
     public Result<String> updateBook(@RequestBody Book book) {
         boolean success = bookService.updateBook(book);
         if (success) {
+            // 更新成功后删除缓存
+            try (Jedis jedis = new Jedis("localhost", 6379)) {
+                jedis.del("book:" + book.getId());
+            } catch (Exception e) {
+                // Redis 异常不影响主流程
+            }
             return Result.success("修改成功");
         }
         return Result.error("修改失败，图书不存在");
@@ -109,12 +154,6 @@ public class BookController {
         return Result.success("从数据库读取并缓存: " + book.toString());
     }
 
-    @PostMapping("/borrow-lock")
-    public Result<String> borrowWithLock(@RequestParam Integer bookId, @RequestParam String borrowerName) {
-        boolean success = borrowRecordService.borrowBookWithLock(bookId, borrowerName);
-        if (success) {
-            return Result.success("借书成功（带锁）");
-        }
-        return Result.error("借书失败");
-    }
+
+
 }

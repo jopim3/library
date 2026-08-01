@@ -1,4 +1,4 @@
-package com.example.library;
+package com.example.library.entity;
 
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;

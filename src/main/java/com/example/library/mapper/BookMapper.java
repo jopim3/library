@@ -1,6 +1,7 @@
-package com.example.library;
+package com.example.library.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.example.library.entity.Book;
 import org.apache.ibatis.annotations.Mapper;
 
 @Mapper
